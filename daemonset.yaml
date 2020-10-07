@@ -71,7 +71,7 @@ spec:
         args:
           - /usr/bin/yum -y install crontabs logrotate > /dev/null 2>&1;
             /usr/bin/echo "Starting Cronjob...";
-            /usr/sbin/crond -ns;
+            /usr/sbin/crond -ns -x proc,pars;
         resources:
           requests:
             memory: "64Mi"
