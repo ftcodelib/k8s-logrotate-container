@@ -1,0 +1,95 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kube-logger
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crontab
+  namespace: kube-logger
+data:
+  myservice_logs: |
+    SHELL=/bin/sh
+    PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+    */5 * * * * root /usr/sbin/logrotate --debug --state /var/lib/logrotate/logrotate.status --force /etc/logrotate.d/myservice_logs > /proc/1/fd/1 2>&1
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logrotate
+  namespace: kube-logger
+data:
+  myservice_logs: |
+    /var/log/myservice/*/*/*/*.log  {
+        daily
+        missingok
+        rotate 7
+        maxage 2
+        maxsize 1G
+        compress
+        delaycompress
+        notifempty
+        copytruncate
+        sharedscripts
+    }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: custlog-logrotate
+  namespace: kube-logger
+spec:
+  selector:
+    matchLabels:
+      app: custlog-logrotate
+  template:
+    metadata:
+      labels:
+        app: custlog-logrotate
+    spec:
+      tolerations:
+      # this toleration is to have the daemonset runnable on master nodes
+      # remove it if your masters can't run pods
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      containers:
+      - name: logrotater
+        image: centos:centos7
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - name: logpath
+          mountPath: /var/log/myservice
+        - name: crontab
+          mountPath: /etc/cron.d/myservice_logs
+          subPath: myservice_logs
+        - name: logrotate
+          mountPath: /etc/logrotate.d/myservice_logs
+          subPath: myservice_logs
+        # Run command
+        command: ["/bin/sh", "-c"]
+        args:
+          - /usr/bin/yum -y install crontabs logrotate > /dev/null 2>&1;
+            /usr/bin/echo "Starting Cronjob...";
+            /usr/sbin/crond -ns;
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: logpath
+        hostPath:
+          path:  /var/log/myservice/
+          type: Directory
+      - name: crontab
+        configMap:
+          name: crontab
+          defaultMode: 0644
+      - name: logrotate
+        configMap:
+          name: logrotate
+          defaultMode: 0644
